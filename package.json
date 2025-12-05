@@ -1,7 +1,7 @@
 {
   "name": "dou-vacancy-tracker",
   "version": "1.0.0",
-  "description": "Відстеження нових вакансій на DOU зі сповіщеннями в Telegram",
+  "description": "\u0412\u0456\u0434\u0441\u0442\u0435\u0436\u0435\u043d\u043d\u044f \u043d\u043e\u0432\u0438\u0445 \u0432\u0430\u043a\u0430\u043d\u0441\u0456\u0439 \u043d\u0430 DOU \u0437\u0456 \u0441\u043f\u043e\u0432\u0456\u0449\u0435\u043d\u043d\u044f\u043c\u0438 \u0432 Telegram",
   "main": "index.js",
   "type": "module",
   "scripts": {
@@ -10,14 +10,19 @@
     "get-chat-id": "node get_chat_id.js",
     "test": "node test.js"
   },
-  "keywords": ["dou", "vacancies", "telegram", "tracker"],
+  "keywords": [
+    "dou",
+    "vacancies",
+    "telegram",
+    "tracker"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "axios": "^1.6.2",
     "cheerio": "^1.0.0-rc.12",
-    "node-telegram-bot-api": "^0.64.0",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "node-fetch": "^3.3.2",
+    "node-telegram-bot-api": "^0.64.0"
   }
 }
-
