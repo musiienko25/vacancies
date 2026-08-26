@@ -1,0 +1,17 @@
+{
+  "name": "dou-vacancy-tracker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-26",
+  "triggers": {
+    "crons": ["*/10 * * * *"]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "SEEN_KV",
+      // Replace after: npx wrangler kv namespace create SEEN_KV
+      "id": "local-seen-kv",
+      // Replace after: npx wrangler kv namespace create SEEN_KV --preview
+      "preview_id": "local-seen-kv-preview"
+    }
+  ]
+}

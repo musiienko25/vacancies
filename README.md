@@ -1,147 +1,136 @@
 # DOU Вакансії Tracker
 
-Застосунок для автоматичного відстеження нових вакансій на DOU (https://jobs.dou.ua) зі сповіщеннями в Telegram.
+Cloudflare Worker з Cron Trigger: парсить вакансії React на [DOU](https://jobs.dou.ua), зберігає вже бачені id у Workers KV і надсилає нові в Telegram.
 
-## 🚀 Швидкий старт
+Немає постійно працюючого HTTP-сервера, Railway, Render, Vercel чи Fly.
 
-### 1. Встановлення залежностей
+## Як це працює
+
+1. Cron `*/10 * * * *` викликає `scheduled()`.
+2. Worker завантажує `https://jobs.dou.ua/vacancies/?search=react`.
+3. Cheerio парсить `.vt` / `li.l-vacancy` (той самий parser, що раніше).
+4. Фільтр: тільки вакансії за сьогодні (календарний день `Europe/Kyiv`).
+5. Нова вакансія = id ще немає в KV `seen_vacancies` (останні 100 записів).
+6. Id записується в KV **до** Telegram, щоб retry Cron не дублював повідомлення.
+7. Той самий текст повідомлення, що раніше.
+
+Ручний запуск використовує той самий `checkVacancies()`, що й Cron.
+
+## Структура
+
+```
+src/
+  index.ts       # scheduled() + GET /run (секрет)
+  check.ts       # оркестрація
+  parser.ts      # DOU fetch + cheerio
+  telegram.ts    # Telegram Bot API
+  storage.ts     # Workers KV
+scripts/
+  check.mjs      # npm run check / check:dry
+wrangler.jsonc   # Cron */10 * * * * і KV binding
+get_chat_id.js   # локально отримати TELEGRAM_CHAT_ID
+```
+
+## Локально
 
 ```bash
 npm install
-```
-
-### 2. Налаштування Telegram бота
-
-#### Крок 1: Створіть бота в Telegram
-
-1. Відкрийте Telegram і знайдіть [@BotFather](https://t.me/BotFather)
-2. Надішліть команду `/newbot`
-3. Дотримуйтесь інструкцій і отримайте токен бота (виглядає як `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`)
-
-#### Крок 2: Отримайте свій Chat ID
-
-1. Знайдіть [@userinfobot](https://t.me/userinfobot) в Telegram
-2. Надішліть команду `/start`
-3. Бот поверне ваш Chat ID (виглядає як `123456789`)
-
-#### Крок 3: Налаштуйте .env файл
-
-Створіть файл `.env` на основі `.env.example`:
-
-```bash
 cp .env.example .env
+cp .dev.vars.example .dev.vars
 ```
 
-Відредагуйте `.env` і додайте ваші дані:
-
-```
-TELEGRAM_BOT_TOKEN=ваш_токен_бота
-TELEGRAM_CHAT_ID=ваш_chat_id
-```
-
-### 3. Запуск
+Заповніть `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `MANUAL_TRIGGER_SECRET` в `.env` і `.dev.vars` (wrangler читає `.dev.vars`).
 
 ```bash
-npm start
+npm run get-chat-id   # після /start боту в Telegram
+npm run check:dry     # DOU → parser → нові вакансії в console; без Telegram і KV
+npm run check         # повний flow, включно з Telegram і локальним KV
 ```
 
-Застосунок буде перевіряти вакансії кожні 30 хвилин і надсилати сповіщення про нові вакансії.
+Повторний `npm run check` одразу після першого має знайти 0 нових і нічого не відправити.
 
-## 📋 Як це працює
-
-1. Застосунок парсить сторінку DOU з пошуком "react"
-2. **Фільтрує тільки вакансії, опубліковані сьогодні** (за замовчуванням)
-3. Зберігає список вже побачених вакансій у файл `seen_vacancies.json`
-4. При знаходженні нової вакансії надсилає сповіщення в Telegram
-5. Перевіряє вакансії кожні 30 хвилин
-
-## ⚙️ Налаштування
-
-### Зміна інтервалу перевірки
-
-Відредагуйте `CHECK_INTERVAL` в `index.js`:
-
-```javascript
-const CHECK_INTERVAL = 30 * 60 * 1000; // 30 хвилин (в мілісекундах)
-```
-
-### Зміна пошукового запиту
-
-Відредагуйте `DOU_URL` в `index.js`:
-
-```javascript
-const DOU_URL = 'https://jobs.dou.ua/vacancies/?search=react';
-```
-
-### Вимкнення фільтрації за сьогодні
-
-За замовчуванням застосунок надсилає тільки вакансії, опубліковані сьогодні. Щоб отримувати всі нові вакансії (незалежно від дати), встановіть:
-
-```javascript
-const ONLY_TODAY = false; // Відключити фільтрацію за сьогодні
-```
-
-## 🌐 Деплой на хостинг
-
-Для запуску застосунку в хмарі (безкоштовно) дивіться детальні інструкції в [DEPLOY.md](./DEPLOY.md).
-
-**Швидкий старт:**
-- **Railway.app** (рекомендовано) - найпростіший деплой
-- **Render.com** - безкоштовний план
-- **GitHub Actions** - для періодичного запуску замість постійного сервера
-
-## 🔧 Запуск у фоновому режимі (локально)
-
-### Використання PM2 (рекомендовано)
+`wrangler dev` піднімає Worker локально. Ручний HTTP:
 
 ```bash
-# Встановіть PM2 глобально
-npm install -g pm2
-
-# Запустіть застосунок
-pm2 start index.js --name dou-tracker
-
-# Перевірте статус
-pm2 status
-
-# Перегляньте логи
-pm2 logs dou-tracker
-
-# Зупиніть застосунок
-pm2 stop dou-tracker
+curl "http://localhost:8787/run?secret=YOUR_MANUAL_TRIGGER_SECRET"
+curl "http://localhost:8787/run?secret=YOUR_MANUAL_TRIGGER_SECRET&dry=1"
+# той самий код, що Cron:
+curl "http://127.0.0.1:8787/cdn-cgi/local/scheduled"
 ```
 
-### Використання nohup (Linux/Mac)
+## Деплой (скопіюйте команди)
 
 ```bash
-nohup node index.js > tracker.log 2>&1 &
+npm install
+npx wrangler login
+
+npx wrangler kv namespace create SEEN_KV
+npx wrangler kv namespace create SEEN_KV --preview
 ```
 
-## 📝 Структура проекту
+Вставте `id` і `preview_id` з виводу в `wrangler.jsonc` → `kv_namespaces[0]`.
 
-```
-vacancies/
-├── index.js              # Основний файл застосунку
-├── package.json          # Залежності проекту
-├── .env                  # Змінні оточення (не комітиться)
-├── .env.example          # Приклад конфігурації
-├── seen_vacancies.json   # Збережені вакансії (створюється автоматично)
-└── README.md             # Документація
+```bash
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+npx wrangler secret put TELEGRAM_CHAT_ID
+npx wrangler secret put MANUAL_TRIGGER_SECRET
+
+npx wrangler deploy
 ```
 
-## 🐛 Вирішення проблем
+У виводі `wrangler deploy` перевірте рядок Cron: `*/10 * * * *`.
 
-### Бот не надсилає сповіщення
+```bash
+npx wrangler secret list
+```
 
-1. Перевірте, чи правильно встановлені `TELEGRAM_BOT_TOKEN` та `TELEGRAM_CHAT_ID` в `.env`
-2. Переконайтеся, що ви почали діалог з ботом (надішліть `/start` боту)
-3. Перевірте логи на наявність помилок
+Ручний запуск на проді (той самий код, що Cron):
 
-### Помилки парсингу
+```bash
+curl "https://<worker>.workers.dev/run?secret=YOUR_MANUAL_TRIGGER_SECRET"
+```
 
-Якщо DOU змінить структуру сторінки, можливо знадобиться оновити селектори в функції `fetchVacancies()`.
+## Що перевірити після деплою
 
-## 📄 Ліцензія
+Локальний Cron Cloudflare не емулює як прод-розклад. Після `wrangler deploy`:
+
+1. Dashboard → Worker → Settings → Triggers: `*/10 * * * *`.
+2. `curl` на `/run?secret=...` — має пройти DOU → parse → KV → Telegram.
+3. Workers → Logs: DOU відповідь, кількість вакансій, KV put, Telegram 200.
+4. Другий `/run` одразу: `newCount: 0`, без повторних повідомлень.
+5. Triggers → Test (scheduled) або почекати наступні 10 хвилин.
+6. Якщо `exceededCpu` у логах часто — cheerio на Free (10 ms CPU) перевищив ліміт; `fetch`/KV/Telegram не рахуються як CPU. Рідкісні перевищення Cloudflare зазвичай толерує.
+
+KV не дозволяє `cacheTtl: 0` (мінімум 30 с). Читання `seen_vacancies` йде без cacheTtl; захист від дублів — запис id у KV **до** відправки Telegram.
+
+## Cloudflare resources
+
+- 1 Worker
+- 1 KV namespace (`SEEN_KV`) + preview
+- Cron Trigger у `wrangler.jsonc` (`*/10 * * * *`)
+
+## Secrets
+
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+- `MANUAL_TRIGGER_SECRET`
+
+## Налаштування
+
+Пошук, фільтр «сьогодні» і селектори — у `src/parser.ts` (`DOU_URL`, `ONLY_TODAY`). Ліміт seen — `MAX_SEEN = 100` у `src/storage.ts` (як раніше `slice(-100)`). Не збільшуйте «очищення» так, щоб старі вакансії знову вважалися новими.
+
+## Після міграції
+
+Змінені: `package.json`, `.gitignore`, `.env.example`, `get_chat_id.js`, `README.md`.
+
+Створені: `src/index.ts`, `src/check.ts`, `src/parser.ts`, `src/telegram.ts`, `src/storage.ts`, `src/types.ts`, `scripts/check.mjs`, `wrangler.jsonc`, `tsconfig.json`, `.dev.vars.example`.
+
+Видалені: `index.js`, `test.js`, `fly.toml`, `DEPLOY.md`, `.github/workflows/check-vacancies.yml`, `supabase/functions/check-vacancies/index.ts`.
+
+Додані npm: `wrangler`, `@cloudflare/workers-types`. Залишені: `cheerio`, `dotenv` (лише для `get_chat_id.js`).
+
+Прибрані npm: `axios`, `node-telegram-bot-api`.
+
+## Ліцензія
 
 MIT
-
