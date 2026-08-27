@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import type { Vacancy } from "./types";
 
-export const DOU_URL = "https://jobs.dou.ua/vacancies/?search=react";
+export const DOU_URL = "https://jobs.dou.ua/vacancies/?search=React&descr=1";
 export const ONLY_TODAY = true;
 
 const USER_AGENT =
