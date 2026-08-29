@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 
-dotenv.config();
+dotenv.config({ path: ".env" });
+dotenv.config({ path: ".dev.vars", override: false });
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 

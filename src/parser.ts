@@ -1,11 +1,27 @@
 import * as cheerio from "cheerio";
 import type { Vacancy } from "./types";
 
-export const DOU_URL = "https://jobs.dou.ua/vacancies/?search=React&descr=1";
+export const DOU_URL =
+  "https://jobs.dou.ua/vacancies/feeds/?search=React&descr=1";
 export const ONLY_TODAY = true;
 
 const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+
+const UA_MONTHS = [
+  "січня",
+  "лютого",
+  "березня",
+  "квітня",
+  "травня",
+  "червня",
+  "липня",
+  "серпня",
+  "вересня",
+  "жовтня",
+  "листопада",
+  "грудня",
+] as const;
 
 function kyivNowParts(): { day: number; month: number } {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -19,6 +35,23 @@ function kyivNowParts(): { day: number; month: number } {
   return { day, month };
 }
 
+function kyivPartsFromDate(date: Date): { day: number; month: number } {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Kyiv",
+    day: "numeric",
+    month: "numeric",
+  }).formatToParts(date);
+
+  const day = Number(parts.find((p) => p.type === "day")?.value);
+  const month = Number(parts.find((p) => p.type === "month")?.value) - 1;
+  return { day, month };
+}
+
+function formatUaDate(date: Date): string {
+  const { day, month } = kyivPartsFromDate(date);
+  return `${day} ${UA_MONTHS[month]}`;
+}
+
 export function isToday(dateString: string | undefined): boolean {
   if (!dateString) return false;
 
@@ -28,20 +61,16 @@ export function isToday(dateString: string | undefined): boolean {
     return true;
   }
 
-  const months: Record<string, number> = {
-    січня: 0,
-    лютого: 1,
-    березня: 2,
-    квітня: 3,
-    травня: 4,
-    червня: 5,
-    липня: 6,
-    серпня: 7,
-    вересня: 8,
-    жовтня: 9,
-    листопада: 10,
-    грудня: 11,
-  };
+  const parsed = Date.parse(dateString);
+  if (!Number.isNaN(parsed)) {
+    const pub = kyivPartsFromDate(new Date(parsed));
+    const today = kyivNowParts();
+    return pub.day === today.day && pub.month === today.month;
+  }
+
+  const months: Record<string, number> = Object.fromEntries(
+    UA_MONTHS.map((name, index) => [name, index]),
+  );
 
   const { day: todayDay, month: todayMonth } = kyivNowParts();
 
@@ -60,51 +89,81 @@ export function isToday(dateString: string | undefined): boolean {
   return false;
 }
 
-function loadHtml(html: string) {
+/** RSS title: "{title} в {company}, {location}" */
+function parseRssTitle(rawTitle: string): {
+  title: string;
+  company: string;
+  location: string;
+} {
+  const match = rawTitle.match(/^(.+?) в (.+?), (.+)$/);
+  if (!match) {
+    return { title: rawTitle.trim(), company: "", location: "" };
+  }
+
+  return {
+    title: match[1].trim(),
+    company: match[2].trim(),
+    location: match[3].trim(),
+  };
+}
+
+function vacancyIdFromLink(link: string): string {
+  const match = link.match(/\/vacancies\/(\d+)/);
+  return match?.[1] || link;
+}
+
+function cleanLink(link: string): string {
   try {
-    return cheerio.load(html);
-  } catch (error) {
-    console.warn("cheerio default parser failed, using htmlparser2:", error);
-    return cheerio.load(html, { _useHtmlParser2: true } as Parameters<typeof cheerio.load>[1]);
+    const url = new URL(link);
+    url.searchParams.delete("utm_source");
+    return url.toString();
+  } catch {
+    return link.split("?")[0];
   }
 }
 
 export async function fetchVacancies(): Promise<Vacancy[]> {
   const response = await fetch(DOU_URL, {
-    headers: { "User-Agent": USER_AGENT },
+    headers: {
+      "User-Agent": USER_AGENT,
+      Accept: "application/rss+xml, application/xml, text/xml, */*",
+      "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.8",
+    },
   });
 
   if (!response.ok) {
     throw new Error(`DOU request failed: ${response.status} ${response.statusText}`);
   }
 
-  const html = await response.text();
-  const $ = loadHtml(html);
+  const xml = await response.text();
+  const $ = cheerio.load(xml, { xml: true });
   const vacancies: Vacancy[] = [];
 
-  $(".vt").each((_index, element) => {
-    const $link = $(element);
-    const $li = $link.closest("li.l-vacancy");
+  $("item").each((_index, element) => {
+    const $item = $(element);
+    const rawTitle = $item.find("title").first().text().trim();
+    const link = $item.find("link").first().text().trim();
+    const pubDate = $item.find("pubDate").first().text().trim();
 
-    const title = $link.text().trim();
-    const link = $link.attr("href");
-    const company = $li.find("a.company").text().trim();
-    const location = $li.find("span.cities").text().trim();
-    const date = $li.find("div.date").text().trim();
-
-    if (title && link && link.includes("/vacancies/")) {
-      const urlParts = link.split("/");
-      const vacancyId = urlParts.find((part) => /^\d+$/.test(part)) || link;
-
-      vacancies.push({
-        id: vacancyId,
-        title,
-        link: link.startsWith("http") ? link : `https://jobs.dou.ua${link}`,
-        company,
-        location,
-        date,
-      });
+    if (!rawTitle || !link || !link.includes("/vacancies/")) {
+      return;
     }
+
+    const { title, company, location } = parseRssTitle(rawTitle);
+    const published = pubDate ? new Date(pubDate) : null;
+    const date =
+      published && !Number.isNaN(published.getTime())
+        ? formatUaDate(published)
+        : pubDate;
+
+    vacancies.push({
+      id: vacancyIdFromLink(link),
+      title,
+      link: cleanLink(link),
+      company,
+      location,
+      date,
+    });
   });
 
   return vacancies;

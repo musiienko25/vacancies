@@ -8,10 +8,8 @@
   "kv_namespaces": [
     {
       "binding": "SEEN_KV",
-      // Replace after: npx wrangler kv namespace create SEEN_KV
-      "id": "local-seen-kv",
-      // Replace after: npx wrangler kv namespace create SEEN_KV --preview
-      "preview_id": "local-seen-kv-preview"
+      "id": "a38bfd82787f46108a8e266fec0f9927",
+      "preview_id": "5f58f48dcc634d788a0866e3766383b3"
     }
   ]
 }

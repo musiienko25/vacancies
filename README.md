@@ -7,8 +7,8 @@ Cloudflare Worker з Cron Trigger: парсить вакансії React на [D
 ## Як це працює
 
 1. Cron `*/10 * * * *` викликає `scheduled()`.
-2. Worker завантажує `https://jobs.dou.ua/vacancies/?search=React&descr=1` (пошук і в описах).
-3. Cheerio парсить `.vt` / `li.l-vacancy` (той самий parser, що раніше).
+2. Worker завантажує RSS `https://jobs.dou.ua/vacancies/feeds/?search=React&descr=1` (пошук і в описах; HTML з CF IP дає 403).
+3. Cheerio парсить RSS `<item>` (title / link / pubDate).
 4. Фільтр: тільки вакансії за сьогодні (календарний день `Europe/Kyiv`).
 5. Нова вакансія = id ще немає в KV `seen_vacancies` (останні 100 записів).
 6. Id записується в KV **до** Telegram, щоб retry Cron не дублював повідомлення.
