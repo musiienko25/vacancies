@@ -20,8 +20,7 @@
   "license": "MIT",
   "dependencies": {
     "cheerio": "^1.0.0-rc.12",
-    "dotenv": "^16.3.1",
-    "node-fetch": "^3.3.2"
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260826.1",

@@ -1,0 +1,30 @@
+name: Fetch DOU RSS
+
+# GitHub-hosted runners are not on Cloudflare IPs, so DOU RSS is reachable.
+# Worker Cron still runs, but jobs.dou.ua returns 403 from Workers.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download RSS and POST to Worker
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          MANUAL_TRIGGER_SECRET: ${{ secrets.MANUAL_TRIGGER_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WORKER_URL:-}" ] || [ -z "${MANUAL_TRIGGER_SECRET:-}" ]; then
+            echo "Set repo secrets WORKER_URL and MANUAL_TRIGGER_SECRET"
+            exit 1
+          fi
+          curl -fsSL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" \
+            -o dou.xml \
+            "https://jobs.dou.ua/vacancies/feeds/?search=React&descr=1"
+          grep -q "<item>" dou.xml
+          curl -fsSL -X POST "${WORKER_URL}/ingest?secret=${MANUAL_TRIGGER_SECRET}" \
+            -H "Content-Type: application/rss+xml" \
+            --data-binary @dou.xml

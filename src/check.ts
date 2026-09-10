@@ -19,7 +19,7 @@ export async function checkVacancies(env: Env, options: CheckOptions): Promise<C
   console.log(`📡 URL: ${DOU_URL}`);
   console.log(`📅 Фільтрація за сьогодні: ${ONLY_TODAY ? "Увімкнено" : "Вимкнено"}`);
 
-  const currentVacancies = await fetchVacancies();
+  const currentVacancies = options.vacancies ?? (await fetchVacancies(env));
   console.log(`📊 Знайдено вакансій: ${currentVacancies.length}`);
 
   const seenVacancies = await loadSeenVacancies(env);

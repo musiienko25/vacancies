@@ -12,8 +12,10 @@ export interface Env {
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_CHAT_ID: string;
   MANUAL_TRIGGER_SECRET: string;
+  JINA_API_KEY?: string;
 }
 
 export interface CheckOptions {
   dryRun: boolean;
+  vacancies?: Vacancy[];
 }

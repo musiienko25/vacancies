@@ -122,49 +122,106 @@ function cleanLink(link: string): string {
   }
 }
 
-export async function fetchVacancies(): Promise<Vacancy[]> {
-  const response = await fetch(DOU_URL, {
-    headers: {
-      "User-Agent": USER_AGENT,
-      Accept: "application/rss+xml, application/xml, text/xml, */*",
-      "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.8",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`DOU request failed: ${response.status} ${response.statusText}`);
+function vacancyFromFeedItem(rawTitle: string, link: string, pubDate: string): Vacancy | null {
+  if (!rawTitle || !link || !link.includes("/vacancies/")) {
+    return null;
   }
 
-  const xml = await response.text();
+  const { title, company, location } = parseRssTitle(rawTitle);
+  const published = pubDate ? new Date(pubDate) : null;
+  const date =
+    published && !Number.isNaN(published.getTime()) ? formatUaDate(published) : pubDate;
+
+  return {
+    id: vacancyIdFromLink(link),
+    title,
+    link: cleanLink(link),
+    company,
+    location,
+    date,
+  };
+}
+
+export function parseRssXml(xml: string): Vacancy[] {
   const $ = cheerio.load(xml, { xml: true });
   const vacancies: Vacancy[] = [];
 
   $("item").each((_index, element) => {
     const $item = $(element);
-    const rawTitle = $item.find("title").first().text().trim();
-    const link = $item.find("link").first().text().trim();
-    const pubDate = $item.find("pubDate").first().text().trim();
-
-    if (!rawTitle || !link || !link.includes("/vacancies/")) {
-      return;
-    }
-
-    const { title, company, location } = parseRssTitle(rawTitle);
-    const published = pubDate ? new Date(pubDate) : null;
-    const date =
-      published && !Number.isNaN(published.getTime())
-        ? formatUaDate(published)
-        : pubDate;
-
-    vacancies.push({
-      id: vacancyIdFromLink(link),
-      title,
-      link: cleanLink(link),
-      company,
-      location,
-      date,
-    });
+    const vacancy = vacancyFromFeedItem(
+      $item.find("title").first().text().trim(),
+      $item.find("link").first().text().trim(),
+      $item.find("pubDate").first().text().trim(),
+    );
+    if (vacancy) vacancies.push(vacancy);
   });
 
   return vacancies;
+}
+
+/** Jina markdown of the same RSS: heading + RFC822 date after the item body. */
+function parseJinaMarkdown(markdown: string): Vacancy[] {
+  const vacancies: Vacancy[] = [];
+  const parts = markdown.split(/\n(?=### \[)/);
+
+  for (const part of parts) {
+    const heading = part.match(/### \[([^\]]+)\]\((https:\/\/jobs\.dou\.ua\/[^)\s]+)\)/);
+    if (!heading) continue;
+    const dateMatch = part.match(
+      /([A-Z][a-z]{2}, \d{1,2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} [+-]\d{4})/,
+    );
+    const vacancy = vacancyFromFeedItem(heading[1], heading[2], dateMatch?.[1] ?? "");
+    if (vacancy) vacancies.push(vacancy);
+  }
+
+  return vacancies;
+}
+
+const DOU_HEADERS = {
+  "User-Agent": USER_AGENT,
+  Accept: "application/rss+xml, application/xml, text/xml, */*",
+  "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.8",
+};
+
+async function fetchViaJina(apiKey: string): Promise<Vacancy[]> {
+  const response = await fetch(`https://r.jina.ai/${DOU_URL}`, {
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "User-Agent": USER_AGENT,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`jina fallback failed: ${response.status} ${response.statusText}`);
+  }
+
+  const payload = (await response.json()) as { data?: { content?: string } };
+  const content = payload.data?.content;
+  if (!content) {
+    throw new Error("jina fallback returned empty content");
+  }
+
+  const vacancies = parseJinaMarkdown(content);
+  if (vacancies.length === 0) {
+    throw new Error("jina fallback parsed 0 vacancies");
+  }
+  return vacancies;
+}
+
+export async function fetchVacancies(env?: { JINA_API_KEY?: string }): Promise<Vacancy[]> {
+  const response = await fetch(DOU_URL, { headers: DOU_HEADERS });
+
+  if (response.ok) {
+    return parseRssXml(await response.text());
+  }
+
+  if (env?.JINA_API_KEY) {
+    console.warn(`DOU RSS ${response.status}, using authenticated jina fallback`);
+    return fetchViaJina(env.JINA_API_KEY);
+  }
+
+  throw new Error(
+    `DOU request failed: ${response.status} ${response.statusText}. Cloudflare IP is blocked; POST RSS to /ingest or set JINA_API_KEY.`,
+  );
 }

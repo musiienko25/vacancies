@@ -6,13 +6,14 @@ Cloudflare Worker з Cron Trigger: парсить вакансії React на [D
 
 ## Як це працює
 
-1. Cron `*/10 * * * *` викликає `scheduled()`.
-2. Worker завантажує RSS `https://jobs.dou.ua/vacancies/feeds/?search=React&descr=1` (пошук і в описах; HTML з CF IP дає 403).
+1. Розклад кожні 10 хвилин (Cloudflare Cron **і/або** GitHub Actions).
+2. RSS `https://jobs.dou.ua/vacancies/feeds/?search=React&descr=1`. З IP Cloudflare DOU відповідає **403**, тому прод бере feed так:
+   - `POST /ingest` з тілом RSS (GitHub Actions runner DOU бачить);
+   - або секрет `JINA_API_KEY` і Reader API `r.jina.ai`.
 3. Cheerio парсить RSS `<item>` (title / link / pubDate).
 4. Фільтр: тільки вакансії за сьогодні (календарний день `Europe/Kyiv`).
 5. Нова вакансія = id ще немає в KV `seen_vacancies` (останні 100 записів).
-6. Id записується в KV **до** Telegram, щоб retry Cron не дублював повідомлення.
-7. Той самий текст повідомлення, що раніше.
+6. Id записується в KV **до** Telegram, щоб retry не дублював повідомлення.
 
 Ручний запуск використовує той самий `checkVacancies()`, що й Cron.
 
@@ -80,6 +81,21 @@ npx wrangler deploy
 
 У виводі `wrangler deploy` перевірте рядок Cron: `*/10 * * * *`.
 
+GitHub → Settings → Secrets and variables → Actions:
+
+- `WORKER_URL` = `https://dou-vacancy-tracker.musiienko.workers.dev`
+- `MANUAL_TRIGGER_SECRET` = той самий, що в Worker
+
+Workflow `.github/workflows/fetch-dou.yml` качає RSS і робить `POST /ingest` кожні 10 хвилин. Без цих секретів Actions впаде, а Cloudflare Cron сам DOU не прочитає (403).
+
+Опційно, щоб Cron на Cloudflare теж міг читати feed:
+
+```bash
+npx wrangler secret put JINA_API_KEY
+```
+
+Ключ: [jina.ai](https://jina.ai/) → Reader API.
+
 ```bash
 npx wrangler secret list
 ```
@@ -87,7 +103,9 @@ npx wrangler secret list
 Ручний запуск на проді (той самий код, що Cron):
 
 ```bash
-curl "https://<worker>.workers.dev/run?secret=YOUR_MANUAL_TRIGGER_SECRET"
+curl -X POST "https://dou-vacancy-tracker.musiienko.workers.dev/ingest?secret=YOUR_MANUAL_TRIGGER_SECRET&dry=1" \
+  -H "Content-Type: application/rss+xml" \
+  --data-binary @<(curl -fsSL "https://jobs.dou.ua/vacancies/feeds/?search=React&descr=1")
 ```
 
 ## Що перевірити після деплою
