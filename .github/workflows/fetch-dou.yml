@@ -25,6 +25,8 @@ jobs:
             -o dou.xml \
             "https://jobs.dou.ua/vacancies/feeds/?search=React&descr=1"
           grep -q "<item>" dou.xml
-          curl -fsSL -X POST "${WORKER_URL}/ingest?secret=${MANUAL_TRIGGER_SECRET}" \
+          curl -fsSL -A "Mozilla/5.0" \
+            -X POST "${WORKER_URL}/ingest?secret=${MANUAL_TRIGGER_SECRET}" \
             -H "Content-Type: application/rss+xml" \
-            --data-binary @dou.xml
+            --data-binary @dou.xml \
+            -w "\ningest HTTP %{http_code}\n"
