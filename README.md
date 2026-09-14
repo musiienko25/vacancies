@@ -6,11 +6,9 @@ Cloudflare Worker з Cron Trigger: парсить вакансії React на [D
 
 ## Як це працює
 
-1. Розклад кожні 10 хвилин (Cloudflare Cron **і/або** GitHub Actions).
-2. RSS `https://jobs.dou.ua/vacancies/feeds/?search=React&descr=1`. З IP Cloudflare DOU відповідає **403**, тому прод бере feed так:
-   - `POST /ingest` з тілом RSS (GitHub Actions runner DOU бачить);
-   - або секрет `JINA_API_KEY` і Reader API `r.jina.ai`.
-3. Cheerio парсить RSS `<item>` (title / link / pubDate).
+1. Cloudflare Cron `*/10 * * * *` будить GitHub Actions (`workflow_dispatch`) — так уникаємо «зависання» GitHub schedule.
+2. GitHub runner качає RSS (його IP DOU не блокує) і робить `POST /ingest` на Worker.
+3. Worker парсить RSS, KV, Telegram.
 4. Фільтр: тільки вакансії за сьогодні (календарний день `Europe/Kyiv`).
 5. Нова вакансія = id ще немає в KV `seen_vacancies` (останні 100 записів).
 6. Id записується в KV **до** Telegram, щоб retry не дублював повідомлення.
@@ -86,15 +84,20 @@ GitHub → Settings → Secrets and variables → Actions:
 - `WORKER_URL` = `https://dou-vacancy-tracker.musiienko.workers.dev`
 - `MANUAL_TRIGGER_SECRET` = той самий, що в Worker
 
-Workflow `.github/workflows/fetch-dou.yml` качає RSS і робить `POST /ingest` кожні 10 хвилин. Без цих секретів Actions впаде, а Cloudflare Cron сам DOU не прочитає (403).
+Щоб Cloudflare Cron **будив** Actions кожні 10 хвилин (інакше GitHub schedule зависає):
 
-Опційно, щоб Cron на Cloudflare теж міг читати feed:
+1. GitHub → Settings → Developer settings → Personal access tokens → Fine-grained  
+   - Resource owner: ваш акаунт  
+   - Repository: `vacancies`  
+   - Permissions → **Actions**: Read and write  
+2. Скопіюйте токен і в проєкті:
 
 ```bash
-npx wrangler secret put JINA_API_KEY
+npx wrangler secret put GITHUB_DISPATCH_TOKEN
+npx wrangler deploy
 ```
 
-Ключ: [jina.ai](https://jina.ai/) → Reader API.
+3. Dashboard → Worker → Triggers → **Test** scheduled — у GitHub Actions має з’явитись новий run **Fetch DOU RSS**.
 
 ```bash
 npx wrangler secret list
@@ -113,11 +116,8 @@ curl -X POST "https://dou-vacancy-tracker.musiienko.workers.dev/ingest?secret=YO
 Локальний Cron Cloudflare не емулює як прод-розклад. Після `wrangler deploy`:
 
 1. Dashboard → Worker → Settings → Triggers: `*/10 * * * *`.
-2. `curl` на `/run?secret=...` — має пройти DOU → parse → KV → Telegram.
-3. Workers → Logs: DOU відповідь, кількість вакансій, KV put, Telegram 200.
-4. Другий `/run` одразу: `newCount: 0`, без повторних повідомлень.
-5. Triggers → Test (scheduled) або почекати наступні 10 хвилин.
-6. Якщо `exceededCpu` у логах часто — cheerio на Free (10 ms CPU) перевищив ліміт; `fetch`/KV/Telegram не рахуються як CPU. Рідкісні перевищення Cloudflare зазвичай толерує.
+2. Triggers → Test scheduled: у логах Worker `GitHub workflow fetch-dou.yml dispatched`, у GitHub — новий run.
+3. Telegram лише для нових за сьогодні; повторний ingest `newCount: 0`.
 
 KV не дозволяє `cacheTtl: 0` (мінімум 30 с). Читання `seen_vacancies` йде без cacheTtl; захист від дублів — запис id у KV **до** відправки Telegram.
 

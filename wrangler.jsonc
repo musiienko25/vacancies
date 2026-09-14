@@ -5,6 +5,10 @@
   "triggers": {
     "crons": ["*/10 * * * *"]
   },
+  "vars": {
+    "GITHUB_REPO": "musiienko25/vacancies",
+    "GITHUB_WORKFLOW": "fetch-dou.yml"
+  },
   "kv_namespaces": [
     {
       "binding": "SEEN_KV",

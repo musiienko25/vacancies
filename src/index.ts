@@ -1,4 +1,5 @@
 import { checkVacancies } from "./check";
+import { dispatchGithubIngest } from "./githubDispatch";
 import { parseRssXml } from "./parser";
 import type { Env, Vacancy } from "./types";
 
@@ -26,11 +27,12 @@ async function runCheck(env: Env, dryRun: boolean, vacancies?: Vacancy[]): Promi
 
 export default {
   async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
+    // DOU blocks Cloudflare IPs. Paid Cron is the reliable clock; GitHub runner fetches RSS.
     try {
-      await checkVacancies(env, { dryRun: false });
+      await dispatchGithubIngest(env);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error("❌ Помилка при перевірці вакансій:", message);
+      console.error("❌ GitHub dispatch failed:", message);
     }
   },
 

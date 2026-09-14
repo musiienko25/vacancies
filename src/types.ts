@@ -13,6 +13,9 @@ export interface Env {
   TELEGRAM_CHAT_ID: string;
   MANUAL_TRIGGER_SECRET: string;
   JINA_API_KEY?: string;
+  GITHUB_DISPATCH_TOKEN?: string;
+  GITHUB_REPO?: string;
+  GITHUB_WORKFLOW?: string;
 }
 
 export interface CheckOptions {

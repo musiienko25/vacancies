@@ -1,11 +1,15 @@
 name: Fetch DOU RSS
 
-# GitHub-hosted runners are not on Cloudflare IPs, so DOU RSS is reachable.
-# Worker Cron still runs, but jobs.dou.ua returns 403 from Workers.
+# Cloudflare Cron (Paid) dispatches this workflow every 10 minutes via GitHub API.
+# Native `schedule` is a backup only — GitHub often delays or skips */10.
 on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
+
+concurrency:
+  group: dou-ingest
+  cancel-in-progress: false
 
 jobs:
   ingest:

@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { fetchUrlViaTlsSocket } from "./socketFetch";
 import type { Vacancy } from "./types";
 
 export const DOU_URL =
@@ -159,69 +160,33 @@ export function parseRssXml(xml: string): Vacancy[] {
   return vacancies;
 }
 
-/** Jina markdown of the same RSS: heading + RFC822 date after the item body. */
-function parseJinaMarkdown(markdown: string): Vacancy[] {
-  const vacancies: Vacancy[] = [];
-  const parts = markdown.split(/\n(?=### \[)/);
-
-  for (const part of parts) {
-    const heading = part.match(/### \[([^\]]+)\]\((https:\/\/jobs\.dou\.ua\/[^)\s]+)\)/);
-    if (!heading) continue;
-    const dateMatch = part.match(
-      /([A-Z][a-z]{2}, \d{1,2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} [+-]\d{4})/,
-    );
-    const vacancy = vacancyFromFeedItem(heading[1], heading[2], dateMatch?.[1] ?? "");
-    if (vacancy) vacancies.push(vacancy);
-  }
-
-  return vacancies;
-}
-
 const DOU_HEADERS = {
   "User-Agent": USER_AGENT,
   Accept: "application/rss+xml, application/xml, text/xml, */*",
   "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.8",
 };
 
-async function fetchViaJina(apiKey: string): Promise<Vacancy[]> {
-  const response = await fetch(`https://r.jina.ai/${DOU_URL}`, {
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      "User-Agent": USER_AGENT,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`jina fallback failed: ${response.status} ${response.statusText}`);
-  }
-
-  const payload = (await response.json()) as { data?: { content?: string } };
-  const content = payload.data?.content;
-  if (!content) {
-    throw new Error("jina fallback returned empty content");
-  }
-
-  const vacancies = parseJinaMarkdown(content);
-  if (vacancies.length === 0) {
-    throw new Error("jina fallback parsed 0 vacancies");
-  }
-  return vacancies;
-}
-
-export async function fetchVacancies(env?: { JINA_API_KEY?: string }): Promise<Vacancy[]> {
+export async function fetchVacancies(_env?: { JINA_API_KEY?: string }): Promise<Vacancy[]> {
   const response = await fetch(DOU_URL, { headers: DOU_HEADERS });
 
   if (response.ok) {
     return parseRssXml(await response.text());
   }
 
-  if (env?.JINA_API_KEY) {
-    console.warn(`DOU RSS ${response.status}, using authenticated jina fallback`);
-    return fetchViaJina(env.JINA_API_KEY);
+  console.warn(`DOU RSS via fetch ${response.status}, trying TLS socket`);
+  try {
+    const socketRes = await fetchUrlViaTlsSocket(DOU_URL);
+    if (socketRes.status >= 200 && socketRes.status < 300 && socketRes.body.includes("<item>")) {
+      console.log("DOU RSS via TLS socket OK");
+      return parseRssXml(socketRes.body);
+    }
+    throw new Error(
+      `DOU fetch ${response.status}; socket ${socketRes.status} (${socketRes.body.slice(0, 80).replace(/\s+/g, " ")})`,
+    );
+  } catch (error) {
+    const socketNote = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `DOU blocked from Cloudflare (${socketNote}). GitHub /ingest still works; Jina is not used.`,
+    );
   }
-
-  throw new Error(
-    `DOU request failed: ${response.status} ${response.statusText}. Cloudflare IP is blocked; POST RSS to /ingest or set JINA_API_KEY.`,
-  );
 }
