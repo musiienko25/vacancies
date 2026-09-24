@@ -1,14 +1,17 @@
 import * as cheerio from "cheerio";
 import type { Vacancy } from "./types";
 
-export const DOU_URL =
-  "https://jobs.dou.ua/vacancies/feeds/?search=React&descr=1";
-export const ONLY_TODAY = true;
+export function douFeedUrl(search: string): string {
+  const url = new URL("https://jobs.dou.ua/vacancies/feeds/");
+  url.searchParams.set("search", search);
+  url.searchParams.set("descr", "1");
+  return url.toString();
+}
 
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
 
-const UA_MONTHS = [
+export const UA_MONTHS = [
   "січня",
   "лютого",
   "березня",
@@ -165,8 +168,8 @@ const DOU_HEADERS = {
   "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.8",
 };
 
-export async function fetchVacancies(): Promise<Vacancy[]> {
-  const response = await fetch(DOU_URL, { headers: DOU_HEADERS });
+export async function fetchVacancies(search: string): Promise<Vacancy[]> {
+  const response = await fetch(douFeedUrl(search), { headers: DOU_HEADERS });
 
   if (!response.ok) {
     throw new Error(`DOU request failed: ${response.status} ${response.statusText}`);

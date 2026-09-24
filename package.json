@@ -8,7 +8,8 @@
     "start": "node dist/server.js",
     "check": "tsx scripts/check-once.ts",
     "check:dry": "tsx scripts/check-once.ts --dry",
-    "get-chat-id": "node get_chat_id.js"
+    "get-chat-id": "node get_chat_id.js",
+    "test": "node --import tsx --test test/*.test.ts"
   },
   "keywords": ["dou", "vacancies", "telegram", "tracker"],
   "author": "",

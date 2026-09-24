@@ -3,18 +3,25 @@ import { checkVacancies } from "./check";
 import { loadEnv } from "./loadEnv";
 import type { Env } from "./types";
 
-const CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const PORT = Number(process.env.PORT || 3000);
 
 const env = loadEnv();
+const intervalMs = env.CHECK_INTERVAL_MINUTES * 60_000;
 let running = false;
 
-function isAuthorized(reqUrl: URL, request: http.IncomingMessage, env: Env): boolean {
+const health = {
+  lastSuccessAt: null as string | null,
+  lastError: null as string | null,
+  seenCount: 0,
+  pendingCount: 0,
+};
+
+function isAuthorized(reqUrl: URL, request: http.IncomingMessage, currentEnv: Env): boolean {
   const secret =
     reqUrl.searchParams.get("secret") ||
     (typeof request.headers["x-manual-secret"] === "string" ? request.headers["x-manual-secret"] : "") ||
     "";
-  return Boolean(env.MANUAL_TRIGGER_SECRET) && secret === env.MANUAL_TRIGGER_SECRET;
+  return Boolean(currentEnv.MANUAL_TRIGGER_SECRET) && secret === currentEnv.MANUAL_TRIGGER_SECRET;
 }
 
 async function runTick(dryRun: boolean) {
@@ -25,7 +32,14 @@ async function runTick(dryRun: boolean) {
   running = true;
   try {
     const result = await checkVacancies(env, { dryRun });
+    health.lastSuccessAt = new Date().toISOString();
+    health.lastError = null;
+    health.seenCount = result.seenCount;
+    health.pendingCount = result.pendingCount;
     return { skipped: false as const, ...result };
+  } catch (error) {
+    health.lastError = error instanceof Error ? error.message : String(error);
+    throw error;
   } finally {
     running = false;
   }
@@ -40,6 +54,14 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown) {
   res.end(payload);
 }
 
+function scheduleTicks() {
+  setInterval(() => {
+    void runTick(false).catch((error) => {
+      console.error("❌ Interval check failed:", error instanceof Error ? error.message : error);
+    });
+  }, intervalMs);
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const host = req.headers.host || `127.0.0.1:${PORT}`;
@@ -49,7 +71,13 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, {
         ok: true,
         service: "dou-vacancy-tracker",
-        intervalMinutes: CHECK_INTERVAL_MS / 60_000,
+        intervalMinutes: env.CHECK_INTERVAL_MINUTES,
+        search: env.DOU_SEARCH,
+        onlyToday: env.ONLY_TODAY,
+        lastSuccessAt: health.lastSuccessAt,
+        lastError: health.lastError,
+        seenCount: health.seenCount,
+        pendingCount: health.pendingCount,
       });
       return;
     }
@@ -84,7 +112,9 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log("🚀 DOU vacancy tracker (Railway)");
   console.log(`🌐 Listening on 0.0.0.0:${PORT}`);
   console.log(`📁 SEEN_FILE: ${env.SEEN_FILE}`);
-  console.log(`⏰ Interval: ${CHECK_INTERVAL_MS / 60_000} min`);
+  console.log(`🔎 Search: ${env.DOU_SEARCH}`);
+  console.log(`📅 Only today: ${env.ONLY_TODAY}`);
+  console.log(`⏰ Interval: ${env.CHECK_INTERVAL_MINUTES} min`);
 
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
     console.warn("⚠️  Telegram не налаштовано (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)");
@@ -98,18 +128,10 @@ server.listen(PORT, "0.0.0.0", () => {
 
   void runTick(false)
     .then(() => {
-      setInterval(() => {
-        void runTick(false).catch((error) => {
-          console.error("❌ Interval check failed:", error instanceof Error ? error.message : error);
-        });
-      }, CHECK_INTERVAL_MS);
+      scheduleTicks();
     })
     .catch((error) => {
       console.error("❌ Initial check failed:", error instanceof Error ? error.message : error);
-      setInterval(() => {
-        void runTick(false).catch((err) => {
-          console.error("❌ Interval check failed:", err instanceof Error ? err.message : err);
-        });
-      }, CHECK_INTERVAL_MS);
+      scheduleTicks();
     });
 });

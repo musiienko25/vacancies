@@ -1,17 +1,17 @@
 # DOU Вакансії Tracker
 
-Node-сервіс на [Railway](https://railway.app): кожні **10 хвилин** качає RSS React-вакансій з [DOU](https://jobs.dou.ua), пам’ятає вже бачені id у файлі на Volume і шле нові в Telegram.
+Node-сервіс на [Railway](https://railway.app): за розкладом качає RSS вакансій з [DOU](https://jobs.dou.ua) (за замовчуванням пошук React, кожні 10 хвилин), пам’ятає вже бачені id у файлі на Volume і шле нові в Telegram.
 
 Без Cloudflare Workers / GitHub Actions — DOU не блокує звичайні IP Railway.
 
 ## Як це працює
 
 1. Процес стартує, слухає `PORT` (health + ручний `/run`).
-2. Одразу робить першу перевірку, далі `setInterval` кожні 10 хв.
-3. Тягне `https://jobs.dou.ua/vacancies/feeds/?search=React&descr=1`.
-4. Фільтр: тільки вакансії за сьогодні (`Europe/Kyiv`).
-5. Нова = id ще немає в `SEEN_FILE` (останні 100).
-6. Id пишеться **до** Telegram, щоб retry не дублював повідомлення.
+2. Одразу робить першу перевірку, далі `setInterval` кожні `CHECK_INTERVAL_MINUTES` (за замовчуванням 10).
+3. Тягне `https://jobs.dou.ua/vacancies/feeds/?search=<DOU_SEARCH>&descr=1`.
+4. Якщо `ONLY_TODAY=true` (за замовчуванням), лишає вакансії за сьогодні (`Europe/Kyiv`).
+5. Нова = id ще немає в `SEEN_FILE`.
+6. Запис спочатку має стан `pending`. Після успішного Telegram він стає `sent`. Якщо відправка впала, запис лишається `pending` і повторюється на наступному тіку, максимум 5 спроб. `MAX_SEEN` витісняє лише `sent`.
 
 ```mermaid
 flowchart LR
@@ -41,13 +41,14 @@ npm install
 cp .env.example .env
 ```
 
-Заповніть `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `MANUAL_TRIGGER_SECRET`.
+Заповніть `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `MANUAL_TRIGGER_SECRET`. За потреби змініть `DOU_SEARCH`, `ONLY_TODAY`, `CHECK_INTERVAL_MINUTES`, `MAX_SEEN` (див. `.env.example`).
 
 ```bash
+npm test              # парсер, HTML і повтор відправки
 npm run get-chat-id   # після /start боту в Telegram
 npm run check:dry     # DOU → parser → console; без Telegram і без запису seen
 npm run check         # повний flow
-npm start             # сервер + інтервал 10 хв
+npm start             # сервер + інтервал
 ```
 
 Ручний запуск при працюючому сервері:
@@ -66,6 +67,7 @@ curl "http://localhost:3000/run?secret=YOUR_MANUAL_TRIGGER_SECRET&dry=1"
    - `TELEGRAM_CHAT_ID`
    - `MANUAL_TRIGGER_SECRET`
    - `SEEN_FILE=/data/seen_vacancies.json`
+   - за потреби: `DOU_SEARCH`, `ONLY_TODAY`, `CHECK_INTERVAL_MINUTES`, `MAX_SEEN`
 
 3. Volume: mount path `/data` (щоб seen не губився після редеплою).
 4. Settings → Start Command: `npm start` (або залиште дефолт з `package.json`).
@@ -86,7 +88,15 @@ curl "https://YOUR-RAILWAY-DOMAIN/run?secret=YOUR_MANUAL_TRIGGER_SECRET&dry=1"
 
 ## Налаштування
 
-Пошук і фільтр «сьогодні» — у `src/parser.ts` (`DOU_URL`, `ONLY_TODAY`). Ліміт seen — `MAX_SEEN = 100` у `src/storage.ts`. Інтервал — `CHECK_INTERVAL_MS` у `src/server.ts`.
+Усе керується змінними середовища (значення за замовчуванням у дужках):
+
+- `DOU_SEARCH` (`React`) — пошуковий запит RSS.
+- `ONLY_TODAY` (`true`) — слати лише вакансії за сьогодні в `Europe/Kyiv`. `false` шле будь-яку ще не бачену вакансію з фіду, тож після простою через північ нічого не губиться.
+- `CHECK_INTERVAL_MINUTES` (`10`) — пауза між перевірками.
+- `MAX_SEEN` (`100`) — скільки успішно відправлених вакансій пам’ятати. Записи `pending` цей ліміт не витісняє.
+- `SEEN_FILE` (`./seen_vacancies.json`) — шлях до стану. Запис іде у тимчасовий файл і потім `rename`, щоб обрив не залишив битий JSON. Якщо файл не читається, тік пропускається і файл не затирається.
+
+`GET /` показує `lastSuccessAt`, `lastError`, `seenCount`, `pendingCount`. Секретів у відповіді немає.
 
 ## Ліцензія
 
