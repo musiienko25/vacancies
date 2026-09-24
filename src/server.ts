@@ -80,9 +80,9 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log("🚀 DOU vacancy tracker (Railway)");
-  console.log(`🌐 Listening on :${PORT}`);
+  console.log(`🌐 Listening on 0.0.0.0:${PORT}`);
   console.log(`📁 SEEN_FILE: ${env.SEEN_FILE}`);
   console.log(`⏰ Interval: ${CHECK_INTERVAL_MS / 60_000} min`);
 
