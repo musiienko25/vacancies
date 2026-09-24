@@ -1,7 +1,9 @@
 node_modules/
+.env
 .dev.vars
 .wrangler/
 seen_vacancies.json
+data/
 *.log
 config.bat
 temp_auto_push.bat

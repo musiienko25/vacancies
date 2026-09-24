@@ -14,12 +14,12 @@ export async function checkVacancies(env: Env, options: CheckOptions): Promise<C
   const dryRun = options.dryRun;
   console.log(`\n🔍 Перевірка вакансій на ${new Date().toLocaleString("uk-UA")}...`);
   if (dryRun) {
-    console.log("🧪 DRY RUN: без Telegram і без запису в KV");
+    console.log("🧪 DRY RUN: без Telegram і без запису seen");
   }
   console.log(`📡 URL: ${DOU_URL}`);
   console.log(`📅 Фільтрація за сьогодні: ${ONLY_TODAY ? "Увімкнено" : "Вимкнено"}`);
 
-  const currentVacancies = options.vacancies ?? (await fetchVacancies(env));
+  const currentVacancies = options.vacancies ?? (await fetchVacancies());
   console.log(`📊 Знайдено вакансій: ${currentVacancies.length}`);
 
   const seenVacancies = await loadSeenVacancies(env);

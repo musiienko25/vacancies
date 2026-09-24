@@ -1,5 +1,4 @@
 import * as cheerio from "cheerio";
-import { fetchUrlViaTlsSocket } from "./socketFetch";
 import type { Vacancy } from "./types";
 
 export const DOU_URL =
@@ -166,27 +165,17 @@ const DOU_HEADERS = {
   "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.8",
 };
 
-export async function fetchVacancies(_env?: { JINA_API_KEY?: string }): Promise<Vacancy[]> {
+export async function fetchVacancies(): Promise<Vacancy[]> {
   const response = await fetch(DOU_URL, { headers: DOU_HEADERS });
 
-  if (response.ok) {
-    return parseRssXml(await response.text());
+  if (!response.ok) {
+    throw new Error(`DOU request failed: ${response.status} ${response.statusText}`);
   }
 
-  console.warn(`DOU RSS via fetch ${response.status}, trying TLS socket`);
-  try {
-    const socketRes = await fetchUrlViaTlsSocket(DOU_URL);
-    if (socketRes.status >= 200 && socketRes.status < 300 && socketRes.body.includes("<item>")) {
-      console.log("DOU RSS via TLS socket OK");
-      return parseRssXml(socketRes.body);
-    }
-    throw new Error(
-      `DOU fetch ${response.status}; socket ${socketRes.status} (${socketRes.body.slice(0, 80).replace(/\s+/g, " ")})`,
-    );
-  } catch (error) {
-    const socketNote = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `DOU blocked from Cloudflare (${socketNote}). GitHub /ingest still works; Jina is not used.`,
-    );
+  const xml = await response.text();
+  if (!xml.includes("<item>")) {
+    throw new Error("DOU response is not an RSS feed with items");
   }
+
+  return parseRssXml(xml);
 }
