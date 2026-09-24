@@ -4,7 +4,8 @@
   "description": "Відстеження нових вакансій на DOU зі сповіщеннями в Telegram",
   "type": "module",
   "scripts": {
-    "start": "tsx src/server.ts",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').writeFileSync('dist/package.json', JSON.stringify({type:'commonjs'}))\"",
+    "start": "node dist/server.js",
     "check": "tsx scripts/check-once.ts",
     "check:dry": "tsx scripts/check-once.ts --dry",
     "get-chat-id": "node get_chat_id.js"
@@ -17,11 +18,11 @@
   },
   "dependencies": {
     "cheerio": "^1.0.0-rc.12",
-    "dotenv": "^16.3.1",
-    "tsx": "^4.20.5"
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",
+    "tsx": "^4.20.5",
     "typescript": "^5.9.2"
   }
 }
