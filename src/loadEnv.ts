@@ -24,7 +24,7 @@ export function loadEnv(): Env {
   const search = process.env.DOU_SEARCH?.trim();
   const DOU_SEARCH = search ? search : "React";
   const ONLY_TODAY = parseBool(process.env.ONLY_TODAY, true);
-  const CHECK_INTERVAL_MINUTES = parsePositiveInt(process.env.CHECK_INTERVAL_MINUTES, 10);
+  const CHECK_INTERVAL_MINUTES = parsePositiveInt(process.env.CHECK_INTERVAL_MINUTES, 5);
   const MAX_SEEN = parsePositiveInt(process.env.MAX_SEEN, 100);
 
   return {

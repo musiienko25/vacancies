@@ -1,13 +1,13 @@
 # DOU Вакансії Tracker
 
-Node-сервіс на [Railway](https://railway.app): за розкладом качає RSS вакансій з [DOU](https://jobs.dou.ua) (за замовчуванням пошук React, кожні 10 хвилин), пам’ятає вже бачені id у файлі на Volume і шле нові в Telegram.
+Node-сервіс на [Railway](https://railway.app): за розкладом качає RSS вакансій з [DOU](https://jobs.dou.ua) (за замовчуванням пошук React, кожні 5 хвилин), пам’ятає вже бачені id у файлі на Volume і шле нові в Telegram.
 
 Без Cloudflare Workers / GitHub Actions — DOU не блокує звичайні IP Railway.
 
 ## Як це працює
 
 1. Процес стартує, слухає `PORT` (health + ручний `/run`).
-2. Одразу робить першу перевірку, далі `setInterval` кожні `CHECK_INTERVAL_MINUTES` (за замовчуванням 10).
+2. Одразу робить першу перевірку, далі `setInterval` кожні `CHECK_INTERVAL_MINUTES` (за замовчуванням 5).
 3. Тягне `https://jobs.dou.ua/vacancies/feeds/?search=<DOU_SEARCH>&descr=1`.
 4. Якщо `ONLY_TODAY=true` (за замовчуванням), лишає вакансії за сьогодні (`Europe/Kyiv`).
 5. Нова = id ще немає в `SEEN_FILE`.
@@ -15,7 +15,7 @@ Node-сервіс на [Railway](https://railway.app): за розкладом �
 
 ```mermaid
 flowchart LR
-  RailwayProc["Railway Node"] -->|"кожні 10 хв"| DouRss["DOU RSS"]
+  RailwayProc["Railway Node"] -->|"кожні 5 хв"| DouRss["DOU RSS"]
   RailwayProc --> SeenFile["SEEN_FILE на Volume"]
   RailwayProc --> Telegram["Telegram"]
 ```
@@ -92,7 +92,7 @@ curl "https://YOUR-RAILWAY-DOMAIN/run?secret=YOUR_MANUAL_TRIGGER_SECRET&dry=1"
 
 - `DOU_SEARCH` (`React`) — пошуковий запит RSS.
 - `ONLY_TODAY` (`true`) — слати лише вакансії за сьогодні в `Europe/Kyiv`. `false` шле будь-яку ще не бачену вакансію з фіду, тож після простою через північ нічого не губиться.
-- `CHECK_INTERVAL_MINUTES` (`10`) — пауза між перевірками.
+- `CHECK_INTERVAL_MINUTES` (`5`) — пауза між перевірками.
 - `MAX_SEEN` (`100`) — скільки успішно відправлених вакансій пам’ятати. Записи `pending` цей ліміт не витісняє.
 - `SEEN_FILE` (`./seen_vacancies.json`) — шлях до стану. Запис іде у тимчасовий файл і потім `rename`, щоб обрив не залишив битий JSON. Якщо файл не читається, тік пропускається і файл не затирається.
 
